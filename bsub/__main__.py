@@ -42,13 +42,7 @@ def bsez(args):
         else:
             args2.append(a[1:])
     kwargs = dict(zip(args2[::2], args2[1::2]))
-    print bsub(job_name, f, **kwargs)()
-
-
-
-
+    print (bsub(job_name, f, **kwargs)())
 
 if __name__ == "__main__":
     bsez(sys.argv[1:])
-
-

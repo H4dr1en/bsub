@@ -58,6 +58,7 @@ import sys
 import os
 import time
 import six
+import re
 
 TEST_ONLY = 666
 
@@ -85,7 +86,7 @@ class bsub(object):
         return int(self.job_id)
 
     def __long__(self):
-        return long(self.job_id)
+        return float(self.job_id)
 
     @property
     def command(self):
@@ -213,9 +214,18 @@ class bsub(object):
         if self.verbose == TEST_ONLY:
             self.job_id = TEST_ONLY
             return self
-        res = _run(command)
-        job = res.split("<", 1)[1].split(">", 1)[0]
-        self.job_id = job
+        _, res, err = _run(command)
+
+        # Retrieve Job id:
+        pattern = r".*Job <(\d*)> is submitted to queue <\w*>.*"
+        match = re.search(pattern, res)
+        if not match:
+            match = re.search(pattern, err)
+        if match:
+            self.job_id = match.group(1)
+        else:
+            raise RuntimeError("Unable to retrieve job Id!")
+
         return self
 
     def then(self, input_string, job_name=None, **kwargs):
@@ -284,7 +294,6 @@ class bsub(object):
         import datetime
         now = datetime.datetime.now()
         if isinstance(name_getter, six.string_types):
-            import re
             reg = re.compile(name_getter)
 
             def name_getter(afile):
@@ -292,7 +301,7 @@ class bsub(object):
 
                 info = match.groupdict() if match.groupdict() \
                                          else dict(name=match.group(0)[0])
-                if not 'name' in info: info['name'] = os.path.basename(file)
+                if not 'name' in info: info['name'] = os.path.basename(afile)
                 return info
 
         else:
@@ -344,7 +353,7 @@ class bsub(object):
 
 
 def _run(command, check_str="is submitted"):
-    p = sp.Popen(command, shell=True, stdout=sp.PIPE, stderr=sp.PIPE)
+    p = sp.Popen(command, shell=True, stdout=sp.PIPE, stderr=sp.PIPE)   
     p.wait()
     res = p.stdout.read().strip().decode("utf-8", "replace")
     err = p.stderr.read().strip().decode("utf-8", "replace")
@@ -354,11 +363,7 @@ def _run(command, check_str="is submitted"):
         if(res): sys.stderr.write(res)
         if(err): sys.stderr.write(err)
         raise BSubException(command + "[" + str(p.returncode) + "]")
-    if not (check_str in res and p.returncode == 0):
-        raise BSubException(res)
-    # could return job-id from here
-    return res
-
-if __name__ == "__main__":
-    import doctest
-    doctest.testmod(optionflags=doctest.REPORT_ONLY_FIRST_FAILURE)
+    if  p.returncode == 0:
+        if not check_str in res and not check_str in err:
+            raise BSubException("Error while running command :", command)
+    return p.returncode, res, err
